@@ -155,20 +155,42 @@ def _select_month(driver, target_year: int, target_month: int, timeout_ms: int) 
 
 def _select_date(driver, target_day: int, timeout_ms: int) -> None:
     LOGGER.info("Selecting day: %s", target_day)
-    cells = driver.find_elements(By.CSS_SELECTOR, ".datepicker--cell-day")
-    target = None
-    for cell in cells:
-        text = (cell.text or "").strip()
-        class_name = cell.get_attribute("class") or ""
-        if text == str(target_day) and "-disabled-" not in class_name and "-other-month-" not in class_name:
-            target = cell
-            break
+    clicked = driver.execute_script(
+        """
+        const targetDay = String(arguments[0]);
+        const cells = Array.from(document.querySelectorAll('.datepicker--cell-day'));
+        const target = cells.find((cell) => {
+            const text = String(cell.textContent || '').trim();
+            const className = String(cell.className || '');
+            return text === targetDay && !className.includes('-disabled-') && !className.includes('-other-month-');
+        });
 
-    if target is None:
+        if (!target) {
+            return false;
+        }
+
+        target.click();
+        return true;
+        """,
+        target_day,
+    )
+
+    if not clicked:
         raise RuntimeError(f"Could not find selectable date: {target_day}")
 
-    target.click()
-    _wait(driver, timeout_ms).until(lambda _: "-selected-" in (target.get_attribute("class") or ""))
+    _wait(driver, timeout_ms).until(
+        lambda current_driver: current_driver.execute_script(
+            """
+            const targetDay = String(arguments[0]);
+            return Array.from(document.querySelectorAll('.datepicker--cell-day')).some((cell) => {
+                const text = String(cell.textContent || '').trim();
+                const className = String(cell.className || '');
+                return text === targetDay && className.includes('-selected-');
+            });
+            """,
+            target_day,
+        )
+    )
     LOGGER.info("Day selected: %s", target_day)
 
 
