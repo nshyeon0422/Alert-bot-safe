@@ -86,6 +86,15 @@ def _build_driver(config: Config, profile_dir: str):
     options.add_argument("--disable-setuid-sandbox")
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-background-networking")
+    options.add_argument("--disable-sync")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-translate")
+    options.add_argument("--metrics-recording-only")
+    options.add_argument("--mute-audio")
+    options.add_argument("--hide-scrollbars")
+    options.add_argument("--window-size=1280,720")
     options.add_argument("--remote-debugging-port=0")
     options.add_argument(f"--user-agent={config.user_agent}")
     options.add_argument("--lang=ko-KR")
@@ -93,10 +102,12 @@ def _build_driver(config: Config, profile_dir: str):
     browser_binary = shutil.which("chromium") or shutil.which("chromium-browser")
     if browser_binary:
         options.binary_location = browser_binary
+        LOGGER.info("Chrome binary: %s", browser_binary)
+
+    LOGGER.info("Chrome driver: %s", service_path if (service_path := shutil.which("chromedriver")) else "selenium-managed")
 
     options.add_argument(f"--user-data-dir={profile_dir}")
 
-    service_path = shutil.which("chromedriver")
     if service_path:
         return webdriver.Chrome(service=ChromeService(service_path), options=options)
 
