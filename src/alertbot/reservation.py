@@ -331,21 +331,12 @@ def build_alert_message(config: Config, snapshot: ReservationSnapshot) -> str:
 
 def run_once(config: Config, notifier: TelegramNotifier, state_store: StateStore) -> None:
     snapshot = inspect_reservation(config)
-    state = state_store.load()
     current_status = "open" if snapshot.is_open else "closed"
-
-    if current_status == state.last_status:
-        return
 
     if not snapshot.is_open:
         state_store.save(ReservationState(last_status=current_status))
         return
 
-    if state.last_status is None and not config.alert_on_start:
-        LOGGER.info("Reservation is open on first check, alert suppressed by ALERT_ON_START=false")
-        state_store.save(ReservationState(last_status=current_status))
-        return
-
     notifier.send_message(build_alert_message(config, snapshot))
     state_store.save(ReservationState(last_status=current_status))
-    LOGGER.warning("Reservation is open; alert sent")
+    LOGGER.warning("Reservation is open; alert sent (repeat every poll)")
