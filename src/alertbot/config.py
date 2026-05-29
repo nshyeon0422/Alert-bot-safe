@@ -42,6 +42,10 @@ class Config:
     cookie: Optional[str]
     retry_on_403: bool
 
+    headless: bool
+    browser_timeout_ms: int
+    interaction_wait_ms: int
+
     verify_ssl: bool
     ca_bundle_path: Optional[str]
 
@@ -84,6 +88,11 @@ class Config:
             referer=os.getenv("REFERER") or None,
             cookie=os.getenv("COOKIE") or None,
             retry_on_403=_parse_bool(os.getenv("RETRY_ON_403"), False),
+
+            headless=_parse_bool(os.getenv("HEADLESS"), True),
+            browser_timeout_ms=_parse_int(os.getenv("BROWSER_TIMEOUT_MS"), 30000),
+            interaction_wait_ms=_parse_int(os.getenv("INTERACTION_WAIT_MS"), 500),
+
             verify_ssl=_parse_bool(os.getenv("VERIFY_SSL"), True),
             ca_bundle_path=os.getenv("CA_BUNDLE_PATH") or None,
             http_proxy=os.getenv("HTTP_PROXY") or None,
