@@ -32,13 +32,14 @@
 
 ## 실행
 - `.env.example`을 복사해 `.env`를 만든 뒤 값을 채웁니다.
-- 의존성을 설치한 뒤, Chromium과 chromedriver를 설치합니다.
+- 의존성을 설치한 뒤, 프로젝트를 editable 모드로 설치합니다.
+- Chromium과 chromedriver를 설치합니다.
 
 라즈베리파이 Zero 2 W에서는 Selenium + 시스템 Chromium 조합을 권장합니다.
 
 ```
 python3 -m pip install --upgrade pip setuptools wheel
-python3 -m pip install -r requirements.txt -i https://pypi.org/simple
+python3 -m pip install -e . -i https://pypi.org/simple
 sudo apt install -y chromium chromium-driver
 python -m alertbot
 ```

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alertbot-safe"
+version = "0.1.0"
+description = "Safe reservation monitor for Zeroworld Hongdae"
+requires-python = ">=3.11"
+dependencies = [
+    "requests==2.32.3",
+    "beautifulsoup4==4.12.3",
+    "python-dotenv==1.0.1",
+    "selenium==4.23.1",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
