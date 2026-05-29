@@ -339,19 +339,16 @@ def build_alert_message(config: Config, snapshot: ReservationSnapshot) -> str:
 
 
 def run_once(config: Config, notifier: TelegramNotifier, state_store: StateStore) -> None:
-    previous_state = state_store.load() # 이전 상태 불러오기
     snapshot = inspect_reservation(config)
     current_status = "open" if snapshot.is_open else "closed"
 
-    if snapshot.is_open:
-        # 이전에 닫혀 있었거나 기록이 없을 때만 알림 전송
-        if previous_state.last_status != "open":
-            notifier.send_message(build_alert_message(config, snapshot))
-            LOGGER.warning("Reservation opened! Alert sent.")
-        else:
-            LOGGER.info("Reservation is still open. Skipped duplicate alert.")
-    else:
-        LOGGER.info("Reservation is closed.")
+    if not snapshot.is_open:
+        state_store.save(ReservationState(last_status=current_status))
+        return
+
+    notifier.send_message(build_alert_message(config, snapshot))
+    state_store.save(ReservationState(last_status=current_status))
+    LOGGER.warning("Reservation is open; alert sent (repeat every poll)")
 
     # 현재 상태 저장
     state_store.save(ReservationState(last_status=current_status))
