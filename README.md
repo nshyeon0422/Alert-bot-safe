@@ -35,8 +35,9 @@
 - 의존성을 설치한 뒤, Playwright 브라우저도 한 번 설치합니다.
 
 ```
-pip install -r requirements.txt
-playwright install chromium
+python3 -m pip install --upgrade pip setuptools wheel
+python3 -m pip install -r requirements.txt -i https://pypi.org/simple
+python3 -m playwright install chromium
 python -m alertbot
 ```
 
