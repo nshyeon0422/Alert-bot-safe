@@ -44,6 +44,23 @@ sudo apt install -y chromium chromium-driver
 python -m alertbot
 ```
 
+## 부팅 시 자동실행
+라즈베리파이에서 부팅할 때 자동으로 시작하려면 `systemd` 서비스를 등록합니다.
+
+```bash
+sudo cp systemd/alertbot.service /etc/systemd/system/alertbot.service
+sudo systemctl daemon-reload
+sudo systemctl enable alertbot.service
+sudo systemctl start alertbot.service
+sudo systemctl status alertbot.service
+```
+
+로그 확인:
+
+```bash
+journalctl -u alertbot.service -f
+```
+
 ## 동작 방식
 대상 페이지를 주기적으로 연 뒤, 2026년 6월 3일과 테마 `[홍대] 층간소음`을 선택합니다. 그 상태에서 시간 슬롯 중 하나라도 활성화되면 텔레그램으로 알림을 전송합니다.
 
