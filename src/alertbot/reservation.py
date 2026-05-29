@@ -88,6 +88,7 @@ def _build_driver(config: Config, profile_dir: str):
     options.add_argument("--remote-debugging-port=0")
     options.add_argument(f"--user-agent={config.user_agent}")
     options.add_argument("--lang=ko-KR")
+    options.add_argument("--disable-dbus")
     
     # ⭐️ 라즈베리파이 크로미움 위치 강제 지정 
     browser_binary = shutil.which("chromium") or shutil.which("chromium-browser")
