@@ -228,15 +228,26 @@ def _collect_time_slots(driver) -> list[dict[str, object]]:
             label = input_element
         label_text = (label.text or input_element.get_attribute("aria-label") or "").strip()
         label_class = label.get_attribute("class") or ""
+        enabled = input_element.is_enabled()
+        available = enabled and "active" not in label_class
         slots.append(
             {
                 "label": label_text,
                 "value": input_element.get_attribute("value") or "",
-                "disabled": not input_element.is_enabled(),
+                "disabled": not enabled,
                 "checked": input_element.is_selected(),
                 "labelClass": label_class,
-                "available": "hover2" in label_class and "active" not in label_class,
+                "enabled": enabled,
+                "available": available,
             }
+        )
+        LOGGER.info(
+            "Slot inspect: label=%s value=%s enabled=%s class=%s -> %s",
+            label_text,
+            input_element.get_attribute("value") or "",
+            enabled,
+            label_class or "-",
+            "open" if available else "closed",
         )
 
     if not slots:
