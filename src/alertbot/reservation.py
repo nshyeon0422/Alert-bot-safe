@@ -1,5 +1,5 @@
 from __future__ import annotations
-from selenium.webdriver.chrome.service import Service as ChromeService
+
 import json
 import logging
 import re
@@ -77,7 +77,7 @@ def _normalize_month_label(label: str) -> str:
 
 
 
-def _build_driver(config: Config):
+def _build_driver(config: Config, profile_dir: str):
     options = ChromeOptions()
     if config.headless:
         options.add_argument("--headless=new")
@@ -88,31 +88,36 @@ def _build_driver(config: Config):
     options.add_argument("--remote-debugging-port=0")
     options.add_argument(f"--user-agent={config.user_agent}")
     options.add_argument("--lang=ko-KR")
-    service = ChromeService(
-        service_args=['--verbose', '--log-path=/home/pi/chromedriver_debug.log']
-    )
+    
+    # ⭐️ 라즈베리파이 크로미움 위치 강제 지정 
     browser_binary = shutil.which("chromium") or shutil.which("chromium-browser")
     if browser_binary:
         options.binary_location = browser_binary
 
-    profile_dir = tempfile.mkdtemp(prefix="alertbot-chrome-")
     options.add_argument(f"--user-data-dir={profile_dir}")
 
+    # ⭐️ 디버그 로그가 확실히 적용되도록 통합
     service_path = shutil.which("chromedriver")
     if service_path:
-        return webdriver.Chrome(service=ChromeService(service_path), options=options)
+        service = ChromeService(executable_path=service_path, service_args=['--verbose', '--log-path=/home/pi/chromedriver_debug.log'])
+    else:
+        service = ChromeService(service_args=['--verbose', '--log-path=/home/pi/chromedriver_debug.log'])
 
     return webdriver.Chrome(service=service, options=options)
 
 
 @contextmanager
 def _driver_session(config: Config):
-    driver = _build_driver(config)
+    # 세션 시작 시 임시 폴더 생성
+    profile_dir = tempfile.mkdtemp(prefix="alertbot-chrome-")
+    driver = _build_driver(config, profile_dir)
     try:
         driver.set_page_load_timeout(max(config.browser_timeout_ms / TIMEOUT_SCALE, 10))
         yield driver
     finally:
         driver.quit()
+        # ⭐️ 세션 종료 시 임시 폴더 깔끔하게 삭제 (용량 폭발 방지)
+        shutil.rmtree(profile_dir, ignore_errors=True)
 
 
 def _wait(driver, timeout_ms: int) -> WebDriverWait:
