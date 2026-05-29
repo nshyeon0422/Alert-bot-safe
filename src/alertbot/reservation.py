@@ -75,11 +75,12 @@ def _parse_month_label(label: str) -> tuple[int, int]:
 def _normalize_month_label(label: str) -> str:
     return re.sub(r"\s+", " ", label or "").strip()
 
+from selenium.webdriver.chrome.service import Service as ChromeService
 
 def _build_driver(config: Config):
     options = ChromeOptions()
     if config.headless:
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
@@ -87,7 +88,9 @@ def _build_driver(config: Config):
     options.add_argument("--remote-debugging-port=0")
     options.add_argument(f"--user-agent={config.user_agent}")
     options.add_argument("--lang=ko-KR")
-
+    service = ChromeService(
+        service_args=['--verbose', '--log-path=/home/pi/chromedriver_debug.log']
+    )
     browser_binary = shutil.which("chromium") or shutil.which("chromium-browser")
     if browser_binary:
         options.binary_location = browser_binary
@@ -99,7 +102,7 @@ def _build_driver(config: Config):
     if service_path:
         return webdriver.Chrome(service=ChromeService(service_path), options=options)
 
-    return webdriver.Chrome(options=options)
+    return webdriver.Chrome(service=service, options=options)
 
 
 @contextmanager
