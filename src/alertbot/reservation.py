@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from selenium.webdriver.chrome.service import Service as ChromeService
 import json
 import logging
 import re
@@ -75,7 +75,7 @@ def _parse_month_label(label: str) -> tuple[int, int]:
 def _normalize_month_label(label: str) -> str:
     return re.sub(r"\s+", " ", label or "").strip()
 
-from selenium.webdriver.chrome.service import Service as ChromeService
+
 
 def _build_driver(config: Config):
     options = ChromeOptions()
