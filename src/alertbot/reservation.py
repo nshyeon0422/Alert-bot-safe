@@ -222,14 +222,11 @@ def _collect_time_slots(driver) -> list[dict[str, object]]:
     slots = []
     inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name="reservationTime"]')
     for input_element in inputs:
-        try:
-            label = input_element.find_element(By.XPATH, "./following-sibling::*[1]")
-        except NoSuchElementException:
-            label = input_element
+        label = input_element.find_element(By.XPATH, "./parent::label")
         label_text = (label.text or input_element.get_attribute("aria-label") or "").strip()
         label_class = label.get_attribute("class") or ""
         enabled = input_element.is_enabled()
-        available = enabled and "active" not in label_class
+        available = enabled and "hover2" in label_class and "active" not in label_class
         slots.append(
             {
                 "label": label_text,
