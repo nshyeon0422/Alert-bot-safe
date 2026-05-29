@@ -118,28 +118,39 @@ def _js_click(driver, element) -> None:
 
 def _select_month(driver, target_year: int, target_month: int, timeout_ms: int) -> str:
     target_label = f"{target_month}월, {target_year}"
+    last_label = None
 
     for _ in range(24):
         current_label = (driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "").strip()
+        last_label = current_label
+        LOGGER.info("Calendar month: %s -> target: %s", current_label, target_label)
         if current_label == target_label:
             return current_label
 
         current_year, current_month = _parse_month_label(current_label)
         nav_actions = driver.find_elements(By.CSS_SELECTOR, ".datepicker--nav-action")
+        LOGGER.info(
+            "Month navigation action: %s / %s",
+            nav_actions[0].get_attribute("class") if nav_actions else "-",
+            nav_actions[-1].get_attribute("class") if nav_actions else "-",
+        )
 
         if (current_year, current_month) < (target_year, target_month):
+            LOGGER.info("Clicking next month")
             _js_click(driver, nav_actions[-1])
         else:
+            LOGGER.info("Clicking previous month")
             _js_click(driver, nav_actions[0])
 
         _wait(driver, timeout_ms).until(
             lambda current_driver: (current_driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "").strip() != current_label
         )
 
-    raise RuntimeError(f"Failed to navigate to target month: {target_label}")
+    raise RuntimeError(f"Failed to navigate to target month: {target_label} (last seen: {last_label})")
 
 
 def _select_date(driver, target_day: int, timeout_ms: int) -> None:
+    LOGGER.info("Selecting day: %s", target_day)
     cells = driver.find_elements(By.CSS_SELECTOR, ".datepicker--cell-day")
     target = None
     for cell in cells:
@@ -154,9 +165,11 @@ def _select_date(driver, target_day: int, timeout_ms: int) -> None:
 
     target.click()
     _wait(driver, timeout_ms).until(lambda _: "-selected-" in (target.get_attribute("class") or ""))
+    LOGGER.info("Day selected: %s", target_day)
 
 
 def _select_theme(driver, theme_name: str, timeout_ms: int) -> None:
+    LOGGER.info("Selecting theme: %s", theme_name)
     inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name="themePK"]')
     target = None
     for input_element in inputs:
@@ -175,9 +188,11 @@ def _select_theme(driver, theme_name: str, timeout_ms: int) -> None:
         target.click()
 
     _wait(driver, timeout_ms).until(lambda _: target.is_selected())
+    LOGGER.info("Theme selected: %s", theme_name)
 
 
 def _collect_time_slots(driver) -> list[dict[str, object]]:
+    LOGGER.info("Collecting reservation time slots")
     slots = []
     inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name="reservationTime"]')
     for input_element in inputs:
@@ -201,6 +216,14 @@ def _collect_time_slots(driver) -> list[dict[str, object]]:
     if not slots:
         raise RuntimeError("No reservation time slots were found")
 
+    LOGGER.info(
+        "Time slots: %s",
+        ", ".join(
+            f"{slot['label']}[{('open' if slot['available'] else 'closed')}]"
+            for slot in slots
+            if slot["label"]
+        ),
+    )
     return slots
 
 
@@ -213,6 +236,13 @@ def inspect_reservation(config: Config) -> ReservationSnapshot:
     reservation_date = f"{config.reservation_year:04d}-{config.reservation_month:02d}-{config.reservation_day:02d}"
 
     with _driver_session(config) as driver:
+        LOGGER.info(
+            "Starting inspection for %04d-%02d-%02d / %s",
+            config.reservation_year,
+            config.reservation_month,
+            config.reservation_day,
+            config.reservation_theme,
+        )
         driver.get(config.target_url)
         _wait(driver, config.browser_timeout_ms).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".datepicker--nav-title")))
         _wait(driver, config.browser_timeout_ms).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="themePK"]')))
