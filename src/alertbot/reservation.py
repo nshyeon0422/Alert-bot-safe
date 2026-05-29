@@ -72,6 +72,10 @@ def _parse_month_label(label: str) -> tuple[int, int]:
     return int(match.group("year")), int(match.group("month"))
 
 
+def _normalize_month_label(label: str) -> str:
+    return re.sub(r"\s+", " ", label or "").strip()
+
+
 def _build_driver(config: Config):
     options = ChromeOptions()
     if config.headless:
@@ -121,7 +125,7 @@ def _select_month(driver, target_year: int, target_month: int, timeout_ms: int) 
     last_label = None
 
     for _ in range(24):
-        current_label = (driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "").strip()
+        current_label = _normalize_month_label(driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "")
         last_label = current_label
         LOGGER.info("Calendar month: %s -> target: %s", current_label, target_label)
         if current_label == target_label:
@@ -143,7 +147,7 @@ def _select_month(driver, target_year: int, target_month: int, timeout_ms: int) 
             _js_click(driver, nav_actions[0])
 
         _wait(driver, timeout_ms).until(
-            lambda current_driver: (current_driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "").strip() != current_label
+            lambda current_driver: _normalize_month_label(current_driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "") != current_label
         )
 
     raise RuntimeError(f"Failed to navigate to target month: {target_label} (last seen: {last_label})")
