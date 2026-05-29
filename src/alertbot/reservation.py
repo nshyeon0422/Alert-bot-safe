@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import shutil
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,17 +75,21 @@ def _parse_month_label(label: str) -> tuple[int, int]:
 def _build_driver(config: Config):
     options = ChromeOptions()
     if config.headless:
-        options.add_argument("--headless=new")
+        options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-setuid-sandbox")
+    options.add_argument("--remote-debugging-port=0")
     options.add_argument(f"--user-agent={config.user_agent}")
     options.add_argument("--lang=ko-KR")
 
     browser_binary = shutil.which("chromium") or shutil.which("chromium-browser")
     if browser_binary:
         options.binary_location = browser_binary
+
+    profile_dir = tempfile.mkdtemp(prefix="alertbot-chrome-")
+    options.add_argument(f"--user-data-dir={profile_dir}")
 
     service_path = shutil.which("chromedriver")
     if service_path:
