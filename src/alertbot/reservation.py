@@ -80,7 +80,7 @@ def _normalize_month_label(label: str) -> str:
 def _build_driver(config: Config, profile_dir: str):
     options = ChromeOptions()
     if config.headless:
-        options.add_argument("--headless=new")
+        options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
