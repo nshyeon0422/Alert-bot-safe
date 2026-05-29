@@ -3,11 +3,19 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from playwright.sync_api import sync_playwright
+from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, WebDriverException
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 from .config import Config
 from .notifier import TelegramNotifier
@@ -15,6 +23,7 @@ from .notifier import TelegramNotifier
 LOGGER = logging.getLogger(__name__)
 
 MONTH_LABEL_RE = re.compile(r"(?P<month>\d{1,2})월,\s*(?P<year>\d{4})")
+TIMEOUT_SCALE = 1000
 
 
 @dataclass(frozen=True)
@@ -62,106 +71,123 @@ def _parse_month_label(label: str) -> tuple[int, int]:
     return int(match.group("year")), int(match.group("month"))
 
 
-def _select_month(page, target_year: int, target_month: int, timeout_ms: int) -> str:
+def _build_driver(config: Config):
+    options = ChromeOptions()
+    if config.headless:
+        options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-setuid-sandbox")
+    options.add_argument(f"--user-agent={config.user_agent}")
+    options.add_argument("--lang=ko-KR")
+
+    browser_binary = shutil.which("chromium") or shutil.which("chromium-browser")
+    if browser_binary:
+        options.binary_location = browser_binary
+
+    service_path = shutil.which("chromedriver")
+    if service_path:
+        return webdriver.Chrome(service=ChromeService(service_path), options=options)
+
+    return webdriver.Chrome(options=options)
+
+
+@contextmanager
+def _driver_session(config: Config):
+    driver = _build_driver(config)
+    try:
+        driver.set_page_load_timeout(max(config.browser_timeout_ms / TIMEOUT_SCALE, 10))
+        yield driver
+    finally:
+        driver.quit()
+
+
+def _wait(driver, timeout_ms: int) -> WebDriverWait:
+    return WebDriverWait(driver, max(timeout_ms / TIMEOUT_SCALE, 1))
+
+
+def _select_month(driver, target_year: int, target_month: int, timeout_ms: int) -> str:
     target_label = f"{target_month}월, {target_year}"
 
     for _ in range(24):
-        current_label = (page.locator(".datepicker--nav-title").text_content() or "").strip()
+        current_label = (driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "").strip()
         if current_label == target_label:
             return current_label
 
         current_year, current_month = _parse_month_label(current_label)
-        nav_actions = page.locator(".datepicker--nav-action")
+        nav_actions = driver.find_elements(By.CSS_SELECTOR, ".datepicker--nav-action")
 
         if (current_year, current_month) < (target_year, target_month):
-            nav_actions.last.click(timeout=timeout_ms)
+            nav_actions[-1].click()
         else:
-            nav_actions.first.click(timeout=timeout_ms)
+            nav_actions[0].click()
 
-        page.wait_for_timeout(200)
+        _wait(driver, timeout_ms).until(
+            lambda current_driver: (current_driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "").strip() != current_label
+        )
 
     raise RuntimeError(f"Failed to navigate to target month: {target_label}")
 
 
-def _select_date(page, target_day: int, timeout_ms: int) -> None:
-    success = page.locator(".datepicker--cell-day").evaluate_all(
-        """
-        (cells, day) => {
-            const targetDay = String(day);
-            const target = cells.find((cell) => {
-                const text = (cell.textContent || '').trim();
-                const className = String(cell.className || '');
-                return text === targetDay && !className.includes('-disabled-') && !className.includes('-other-month-');
-            });
+def _select_date(driver, target_day: int, timeout_ms: int) -> None:
+    cells = driver.find_elements(By.CSS_SELECTOR, ".datepicker--cell-day")
+    target = None
+    for cell in cells:
+        text = (cell.text or "").strip()
+        class_name = cell.get_attribute("class") or ""
+        if text == str(target_day) and "-disabled-" not in class_name and "-other-month-" not in class_name:
+            target = cell
+            break
 
-            if (!target) {
-                return false;
-            }
-
-            target.click();
-            return true;
-        }
-        """,
-        target_day,
-    )
-
-    if not success:
+    if target is None:
         raise RuntimeError(f"Could not find selectable date: {target_day}")
 
-    page.wait_for_timeout(timeout_ms // 10 if timeout_ms >= 10 else 10)
+    target.click()
+    _wait(driver, timeout_ms).until(lambda _: "-selected-" in (target.get_attribute("class") or ""))
 
 
-def _select_theme(page, theme_name: str, timeout_ms: int) -> None:
-    success = page.locator('input[name="themePK"]').evaluate_all(
-        """
-        (inputs, theme) => {
-            const normalize = (text) => String(text || '').replace(/\\s+/g, '');
-            const wanted = normalize(theme);
-            const target = inputs.find((input) => {
-                const label = input.nextElementSibling?.textContent || input.parentElement?.textContent || '';
-                return normalize(label) === wanted;
-            });
+def _select_theme(driver, theme_name: str, timeout_ms: int) -> None:
+    inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name="themePK"]')
+    target = None
+    for input_element in inputs:
+        label = input_element.find_element(By.XPATH, "./following-sibling::*[1]")
+        label_text = (label.text or "").replace(" ", "")
+        if label_text == theme_name.replace(" ", ""):
+            target = input_element
+            break
 
-            if (!target) {
-                return false;
-            }
-
-            const label = target.closest('label') || target.parentElement;
-            if (label) {
-                label.click();
-            } else {
-                target.click();
-            }
-
-            return target.checked;
-        }
-        """,
-        theme_name,
-    )
-
-    if not success:
+    if target is None:
         raise RuntimeError(f"Could not find theme: {theme_name}")
 
-    page.wait_for_timeout(timeout_ms // 10 if timeout_ms >= 10 else 10)
+    try:
+        target.find_element(By.XPATH, "./following-sibling::*[1]").click()
+    except (NoSuchElementException, WebDriverException):
+        target.click()
+
+    _wait(driver, timeout_ms).until(lambda _: target.is_selected())
 
 
-def _collect_time_slots(page) -> list[dict[str, object]]:
-    slots = page.locator('input[name="reservationTime"]').evaluate_all(
-        """
-        (inputs) => inputs.map((input) => {
-            const label = (input.nextElementSibling?.textContent || input.parentElement?.textContent || input.getAttribute('aria-label') || '').trim();
-            const labelClass = String(input.nextElementSibling?.className || input.parentElement?.className || '');
-            return {
-                label,
-                value: input.value || '',
-                disabled: Boolean(input.disabled),
-                checked: Boolean(input.checked),
-                labelClass,
-                available: labelClass.includes('hover2') && !labelClass.includes('active'),
-            };
-        })
-        """
-    )
+def _collect_time_slots(driver) -> list[dict[str, object]]:
+    slots = []
+    inputs = driver.find_elements(By.CSS_SELECTOR, 'input[name="reservationTime"]')
+    for input_element in inputs:
+        try:
+            label = input_element.find_element(By.XPATH, "./following-sibling::*[1]")
+        except NoSuchElementException:
+            label = input_element
+        label_text = (label.text or input_element.get_attribute("aria-label") or "").strip()
+        label_class = label.get_attribute("class") or ""
+        slots.append(
+            {
+                "label": label_text,
+                "value": input_element.get_attribute("value") or "",
+                "disabled": not input_element.is_enabled(),
+                "checked": input_element.is_selected(),
+                "labelClass": label_class,
+                "available": "hover2" in label_class and "active" not in label_class,
+            }
+        )
 
     if not slots:
         raise RuntimeError("No reservation time slots were found")
@@ -177,58 +203,45 @@ def inspect_reservation(config: Config) -> ReservationSnapshot:
 
     reservation_date = f"{config.reservation_year:04d}-{config.reservation_month:02d}-{config.reservation_day:02d}"
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=config.headless)
-        context = browser.new_context(
-            user_agent=config.user_agent,
-            locale="ko-KR",
-            ignore_https_errors=not config.verify_ssl,
+    with _driver_session(config) as driver:
+        driver.get(config.target_url)
+        _wait(driver, config.browser_timeout_ms).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".datepicker--nav-title")))
+        _wait(driver, config.browser_timeout_ms).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="themePK"]')))
+        _wait(driver, config.browser_timeout_ms).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="reservationTime"]')))
+
+        month_label = _select_month(
+            driver,
+            config.reservation_year,
+            config.reservation_month,
+            config.browser_timeout_ms,
         )
-        page = context.new_page()
+        _select_date(driver, config.reservation_day, config.browser_timeout_ms)
+        _select_theme(driver, config.reservation_theme, config.browser_timeout_ms)
 
-        try:
-            page.goto(config.target_url, wait_until="domcontentloaded", timeout=config.browser_timeout_ms)
-            page.wait_for_selector(".datepicker--nav-title", timeout=config.browser_timeout_ms)
-            page.wait_for_selector('input[name="themePK"]', timeout=config.browser_timeout_ms)
-            page.wait_for_selector('input[name="reservationTime"]', timeout=config.browser_timeout_ms)
+        slots = _collect_time_slots(driver)
+        available_times = tuple(
+            slot["label"]
+            for slot in slots
+            if slot["label"] and slot["available"]
+        )
 
-            month_label = _select_month(
-                page,
-                config.reservation_year,
-                config.reservation_month,
-                config.browser_timeout_ms,
-            )
-            _select_date(page, config.reservation_day, config.browser_timeout_ms)
-            _select_theme(page, config.reservation_theme, config.browser_timeout_ms)
-            page.wait_for_timeout(config.interaction_wait_ms)
-
-            slots = _collect_time_slots(page)
-            available_times = tuple(
-                slot["label"]
-                for slot in slots
-                if slot["label"] and slot["available"]
+        if config.log_item_decisions:
+            LOGGER.info(
+                "Reservation inspected: date=%s theme=%s month=%s open=%s available_times=%s",
+                reservation_date,
+                config.reservation_theme,
+                month_label,
+                bool(available_times),
+                ", ".join(available_times) or "-",
             )
 
-            if config.log_item_decisions:
-                LOGGER.info(
-                    "Reservation inspected: date=%s theme=%s month=%s open=%s available_times=%s",
-                    reservation_date,
-                    config.reservation_theme,
-                    month_label,
-                    bool(available_times),
-                    ", ".join(available_times) or "-",
-                )
-
-            return ReservationSnapshot(
-                reservation_date=reservation_date,
-                theme_name=config.reservation_theme,
-                month_label=month_label,
-                available_times=available_times,
-                is_open=bool(available_times),
-            )
-        finally:
-            context.close()
-            browser.close()
+        return ReservationSnapshot(
+            reservation_date=reservation_date,
+            theme_name=config.reservation_theme,
+            month_label=month_label,
+            available_times=available_times,
+            is_open=bool(available_times),
+        )
 
 
 def build_alert_message(config: Config, snapshot: ReservationSnapshot) -> str:
