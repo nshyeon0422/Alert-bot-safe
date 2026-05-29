@@ -76,7 +76,7 @@ def _normalize_month_label(label: str) -> str:
     return re.sub(r"\s+", " ", label or "").strip()
 
 
-def _build_driver(config: Config):
+def _build_driver(config: Config, profile_dir: str):
     options = ChromeOptions()
     if config.headless:
         options.add_argument("--headless")
@@ -84,6 +84,8 @@ def _build_driver(config: Config):
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-setuid-sandbox")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
     options.add_argument("--remote-debugging-port=0")
     options.add_argument(f"--user-agent={config.user_agent}")
     options.add_argument("--lang=ko-KR")
@@ -92,7 +94,6 @@ def _build_driver(config: Config):
     if browser_binary:
         options.binary_location = browser_binary
 
-    profile_dir = tempfile.mkdtemp(prefix="alertbot-chrome-")
     options.add_argument(f"--user-data-dir={profile_dir}")
 
     service_path = shutil.which("chromedriver")
@@ -104,12 +105,14 @@ def _build_driver(config: Config):
 
 @contextmanager
 def _driver_session(config: Config):
-    driver = _build_driver(config)
-    try:
-        driver.set_page_load_timeout(max(config.browser_timeout_ms / TIMEOUT_SCALE, 10))
-        yield driver
-    finally:
-        driver.quit()
+    with tempfile.TemporaryDirectory(prefix="alertbot-chrome-", dir=str(Path.cwd())) as profile_dir:
+        LOGGER.info("Chrome profile dir: %s", profile_dir)
+        driver = _build_driver(config, profile_dir)
+        try:
+            driver.set_page_load_timeout(max(config.browser_timeout_ms / TIMEOUT_SCALE, 10))
+            yield driver
+        finally:
+            driver.quit()
 
 
 def _wait(driver, timeout_ms: int) -> WebDriverWait:
