@@ -107,6 +107,10 @@ def _wait(driver, timeout_ms: int) -> WebDriverWait:
     return WebDriverWait(driver, max(timeout_ms / TIMEOUT_SCALE, 1))
 
 
+def _js_click(driver, element) -> None:
+    driver.execute_script("arguments[0].click();", element)
+
+
 def _select_month(driver, target_year: int, target_month: int, timeout_ms: int) -> str:
     target_label = f"{target_month}월, {target_year}"
 
@@ -119,9 +123,9 @@ def _select_month(driver, target_year: int, target_month: int, timeout_ms: int) 
         nav_actions = driver.find_elements(By.CSS_SELECTOR, ".datepicker--nav-action")
 
         if (current_year, current_month) < (target_year, target_month):
-            nav_actions[-1].click()
+            _js_click(driver, nav_actions[-1])
         else:
-            nav_actions[0].click()
+            _js_click(driver, nav_actions[0])
 
         _wait(driver, timeout_ms).until(
             lambda current_driver: (current_driver.find_element(By.CSS_SELECTOR, ".datepicker--nav-title").text or "").strip() != current_label
